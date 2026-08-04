@@ -14,6 +14,7 @@ as before because everything originally in schemas.py is still defined
 right here in schemas/__init__.py.
 """
 from datetime import datetime
+from typing import List
 
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 
@@ -30,10 +31,21 @@ class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=128)
 
 
+class RoleSummary(BaseModel):
+    """Lightweight role shape embedded inside a user object (Phase 3)."""
+
+    id: int
+    name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class UserOut(UserBase):
     id: int
     is_active: bool
     created_at: datetime
+    role: RoleSummary | None = None
+    roles: List[RoleSummary] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -74,10 +86,63 @@ from app.schemas.bug_schema import (  # noqa: E402  (import at bottom is intenti
     GenerateBugResponse,
 )
 
+# ---------------------------------------------------------------------------
+# RBAC (Phase 3) + Admin User Management (Phase 4) — re-exported the same
+# way bug_schema's classes are above.
+# ---------------------------------------------------------------------------
+from app.schemas.admin_schema import (  # noqa: E402
+    AdminSetPasswordRequest,
+    AdminUserListResponse,
+    AdminUserOut,
+    AdminUserUpdateRequest,
+    AssignRoleRequest,
+    AssignRolesRequest,
+    ChangeOwnPasswordRequest,
+    InviteUserRequest,
+    InviteUserResponse,
+    PermissionOut,
+    RoleOut,
+    UpdateOwnProfileRequest,
+)
+
+# ---------------------------------------------------------------------------
+# Projects / Sprints / Tasks / Bugs (Phase 5) — re-exported the same way.
+# ---------------------------------------------------------------------------
+from app.schemas.project_schema import (  # noqa: E402
+    AddProjectMembersRequest,
+    BugCreate,
+    BugListResponse,
+    BugOut,
+    BugUpdate,
+    ProjectCreate,
+    ProjectListResponse,
+    ProjectMemberOut,
+    ProjectOut,
+    ProjectUpdate,
+    SprintCreate,
+    SprintOut,
+    SprintSummary,
+    SprintUpdate,
+    SubTaskCreate,
+    SubTaskOut,
+    SubTaskUpdate,
+    TaskCreate,
+    TaskOut,
+    TaskSummary,
+    TaskUpdate,
+    UserSummary,
+)
+
+from app.schemas.audit_schema import (  # noqa: E402
+    AuditLogListResponse,
+    AuditLogOut,
+)
+
 __all__ = [
     "UserBase",
     "UserCreate",
     "UserOut",
+    "RoleSummary",
     "LoginRequest",
     "Token",
     "TokenPayload",
@@ -85,4 +150,40 @@ __all__ = [
     "BugReportAI",
     "GenerateBugRequestMeta",
     "GenerateBugResponse",
+    "RoleOut",
+    "PermissionOut",
+    "AdminUserOut",
+    "AdminUserListResponse",
+    "InviteUserRequest",
+    "InviteUserResponse",
+    "AdminUserUpdateRequest",
+    "AssignRoleRequest",
+    "AssignRolesRequest",
+    "AdminSetPasswordRequest",
+    "ChangeOwnPasswordRequest",
+    "UpdateOwnProfileRequest",
+    "UserSummary",
+    "ProjectCreate",
+    "ProjectUpdate",
+    "ProjectOut",
+    "ProjectListResponse",
+    "ProjectMemberOut",
+    "AddProjectMembersRequest",
+    "SprintCreate",
+    "SprintUpdate",
+    "SprintOut",
+    "SprintSummary",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskOut",
+    "TaskSummary",
+    "SubTaskCreate",
+    "SubTaskUpdate",
+    "SubTaskOut",
+    "BugCreate",
+    "BugUpdate",
+    "BugOut",
+    "BugListResponse",
+    "AuditLogOut",
+    "AuditLogListResponse",
 ]

@@ -15,6 +15,7 @@ from app.models import User
 from app.schemas.bug_schema import GenerateBugResponse
 from app.services.bug.bug_generator import generate_bug_report
 from app.services.evidence.evidence_merger import merge_evidence
+from app.services.image_storage import save_bug_image
 
 router = APIRouter(prefix="/api/v1/ai", tags=["AI Bug Generator"])
 
@@ -43,4 +44,13 @@ async def generate_bug(
         browser_url=browser_url,
     )
 
-    return generate_bug_report(evidence)
+    result = generate_bug_report(evidence)
+
+    # Persist the screenshot to disk so it can be previewed later —
+    # wherever this bug ends up being shown, not just in this response.
+    # Saved *after* a successful analysis so a failed/rejected upload
+    # never litters the uploads folder.
+    image_url = save_bug_image(image_bytes, image.content_type, image.filename)
+    result.image_url = image_url
+
+    return result

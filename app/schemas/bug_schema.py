@@ -73,3 +73,10 @@ class GenerateBugResponse(BaseModel):
         ..., description="True if confidence_score fell below the configured threshold"
     )
     model_used: str
+    image_url: Optional[str] = Field(
+        None,
+        description=(
+            "Public URL of the screenshot that was uploaded, persisted to disk so it "
+            "can be shown as a preview later (e.g. saved onto the Bug once created)."
+        ),
+    )

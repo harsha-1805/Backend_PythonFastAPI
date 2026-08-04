@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+
+# Environment variables
+.env
+
+# Uploads
+uploads/
+
+# SQLite databases
+*.db
+
+# Pytest
+.pytest_cache/
+
+# VS Code
+.vscode/

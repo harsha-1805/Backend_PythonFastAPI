@@ -26,9 +26,15 @@ Base = declarative_base()
 
 
 def get_db():
-    """FastAPI dependency that yields a DB session and always closes it."""
+    """FastAPI dependency that yields a DB session, rolls back on any
+    error so a failed write never leaves a dirty transaction sitting on
+    a pooled connection, and always closes the session afterwards.
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

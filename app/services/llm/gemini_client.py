@@ -71,3 +71,36 @@ class GeminiClient:
                 detail="Gemini returned an empty response.",
             )
         return text
+
+    def generate_text(self, *, prompt: str) -> str:
+        """Plain text (no image) generation — used by the AI Assistant to
+        turn a bundle of real query results into a natural-language
+        answer. Kept as a separate method (not a param on
+        generate_bug_json) because the config is meaningfully different:
+        conversational temperature, no forced JSON mime type.
+        """
+        if not self._configured:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="GEMINI_API_KEY is not configured on the server.",
+            )
+
+        try:
+            response = self._client.models.generate_content(
+                model=self._model_name,
+                contents=[prompt],
+                config=types.GenerateContentConfig(temperature=0.4),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Gemini request failed: {exc}",
+            ) from exc
+
+        text = getattr(response, "text", None)
+        if not text:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Gemini returned an empty response.",
+            )
+        return text

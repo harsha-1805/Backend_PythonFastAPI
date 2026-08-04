@@ -40,11 +40,29 @@ class Settings(BaseSettings):
     max_text_field_chars: int = 20000
     allowed_image_content_types: str = "image/png,image/jpeg,image/jpg,image/webp"
 
+    # --- Uploaded file storage ----------------------------------------------
+    # Where AI Bug Generator screenshots (and any other uploaded evidence
+    # images) are persisted on disk, and the URL prefix they're served
+    # under (mounted as StaticFiles in main.py).
+    upload_dir: str = "uploads"
+    upload_url_prefix: str = "/uploads"
+
+    # --- User Management: allowed email domains -----------------------------
+    # Comma separated list of domains new accounts (signup + admin/HR
+    # "Invite user") are allowed to use. Keeps out throwaway/unknown
+    # domains like "@ok.lol". Add your company domain via .env, e.g.
+    # ALLOWED_EMAIL_DOMAINS=gmail.com,yourcompany.com
+    allowed_email_domains: str = "gmail.com,outlook.com,yahoo.com,hotmail.com,ebit.com"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property
     def allowed_image_content_type_list(self):
         return [t.strip() for t in self.allowed_image_content_types.split(",") if t.strip()]
+
+    @property
+    def allowed_email_domain_list(self):
+        return [d.strip().lower() for d in self.allowed_email_domains.split(",") if d.strip()]
 
     @property
     def cors_origin_list(self) -> list[str]:
