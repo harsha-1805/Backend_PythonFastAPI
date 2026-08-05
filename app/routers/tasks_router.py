@@ -1,12 +1,14 @@
 """Task routes (Phase 5 + Phase 8 project-team scoping)."""
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import require_permission
 from app.models import User
-from app.schemas import MessageResponse, TaskCreate, TaskOut, TaskUpdate
+from app.schemas import MessageResponse, TaskAttachmentOut, TaskCreate, TaskOut, TaskUpdate
 from app.services import audit_service, project_access, task_service
+from app.services.image_storage import save_task_attachment_image
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["Tasks"])
 
@@ -55,6 +57,7 @@ def create_task(
         project_id=payload.project_id,
         title=payload.title,
         description=payload.description,
+        acceptance_criteria=payload.acceptance_criteria,
         status=payload.status,
         due_date=payload.due_date,
         assigned_to=payload.assigned_to,
@@ -147,3 +150,58 @@ def delete_task(
         project_id=task.project_id,
     )
     return MessageResponse(message="Task deleted successfully")
+
+
+# ---------------------------------------------------------------------------
+# Reference screenshot attachments — extra visual grounding (design mocks,
+# expected-result shots) fed to the AI test-case generator alongside the
+# task's description/acceptance criteria. Separate from Bug.image_url: a
+# task can carry several of these, a bug carries one.
+# ---------------------------------------------------------------------------
+@router.post("/{task_id}/attachments", response_model=TaskAttachmentOut, status_code=status.HTTP_201_CREATED)
+async def upload_task_attachment(
+    task_id: int,
+    image: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("tasks.edit")),
+):
+    task = task_service.get_task(db, task_id=task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    project_access.assert_project_access(db, user=current_user, project_id=task.project_id)
+
+    if image.content_type not in settings.allowed_image_content_type_list:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"Unsupported image type: {image.content_type}",
+        )
+    image_bytes = await image.read()
+    max_bytes = settings.max_image_size_mb * 1024 * 1024
+    if len(image_bytes) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Image exceeds the {settings.max_image_size_mb}MB limit",
+        )
+
+    image_url = save_task_attachment_image(image_bytes, image.content_type, image.filename)
+    attachment = task_service.add_attachment(
+        db, task_id=task_id, image_url=image_url, uploaded_by=current_user.id
+    )
+    return TaskAttachmentOut.model_validate(attachment)
+
+
+@router.delete("/attachments/{attachment_id}", response_model=MessageResponse)
+def delete_task_attachment(
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("tasks.edit")),
+):
+    attachment = task_service.get_attachment(db, attachment_id=attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
+    task = task_service.get_task(db, task_id=attachment.task_id)
+    if task is not None:
+        project_access.assert_project_access(db, user=current_user, project_id=task.project_id)
+
+    task_service.delete_attachment(db, attachment_id=attachment_id)
+    return MessageResponse(message="Attachment deleted successfully")

@@ -3,7 +3,7 @@ import logging
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Project, Sprint, Task
+from app.models import Project, Sprint, Task, TaskAttachment
 from app.services import project_access
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,10 @@ def list_tasks(
     project_ids: set[int] | None = None,
 ) -> list[Task]:
     query = db.query(Task).options(
-        joinedload(Task.assignee), joinedload(Task.reporter), joinedload(Task.sprint)
+        joinedload(Task.assignee),
+        joinedload(Task.reporter),
+        joinedload(Task.sprint),
+        joinedload(Task.attachments),
     )
     if project_ids is not None:
         query = query.filter(Task.project_id.in_(project_ids))
@@ -34,7 +37,12 @@ def list_tasks(
 def get_task(db: Session, *, task_id: int) -> Task | None:
     return (
         db.query(Task)
-        .options(joinedload(Task.assignee), joinedload(Task.reporter), joinedload(Task.sprint))
+        .options(
+            joinedload(Task.assignee),
+            joinedload(Task.reporter),
+            joinedload(Task.sprint),
+            joinedload(Task.attachments),
+        )
         .filter(Task.id == task_id)
         .first()
     )
@@ -46,6 +54,7 @@ def create_task(
     project_id: int,
     title: str,
     description: str | None,
+    acceptance_criteria: str | None = None,
     status: str,
     due_date,
     assigned_to: int | None,
@@ -70,6 +79,7 @@ def create_task(
         project_id=project_id,
         title=title,
         description=description,
+        acceptance_criteria=acceptance_criteria,
         status=status,
         due_date=due_date,
         assigned_to=assigned_to,
@@ -110,6 +120,36 @@ def update_task(db: Session, *, task_id: int, **fields) -> Task:
         raise
     db.refresh(task)
     return task
+
+
+def add_attachment(db: Session, *, task_id: int, image_url: str, uploaded_by: int | None) -> TaskAttachment:
+    attachment = TaskAttachment(task_id=task_id, image_url=image_url, uploaded_by=uploaded_by)
+    db.add(attachment)
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to save attachment for task #%s", task_id)
+        raise
+    db.refresh(attachment)
+    return attachment
+
+
+def get_attachment(db: Session, *, attachment_id: int) -> TaskAttachment | None:
+    return db.query(TaskAttachment).filter(TaskAttachment.id == attachment_id).first()
+
+
+def delete_attachment(db: Session, *, attachment_id: int) -> None:
+    attachment = get_attachment(db, attachment_id=attachment_id)
+    if attachment is None:
+        raise LookupError("Attachment not found")
+    try:
+        db.delete(attachment)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to delete attachment #%s", attachment_id)
+        raise
 
 
 def delete_task(db: Session, *, task_id: int) -> None:

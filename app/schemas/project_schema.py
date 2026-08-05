@@ -156,6 +156,11 @@ class SprintSummary(BaseModel):
 class TaskBase(BaseModel):
     title: str = Field(min_length=2, max_length=255)
     description: Optional[str] = None
+    # What must actually be true for this task to be considered done —
+    # kept distinct from `description` so the AI test-case generator has
+    # a clean "conditions to verify" signal instead of having to parse
+    # criteria back out of a general description.
+    acceptance_criteria: Optional[str] = None
     status: str = Field(default="To Do")
     due_date: Optional[date] = None
 
@@ -177,6 +182,7 @@ class TaskCreate(TaskBase):
 class TaskUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=2, max_length=255)
     description: Optional[str] = None
+    acceptance_criteria: Optional[str] = None
     status: Optional[str] = None
     due_date: Optional[date] = None
     sprint_id: Optional[int] = None
@@ -188,6 +194,15 @@ class TaskUpdate(BaseModel):
         return _reject_past_date(v)
 
 
+class TaskAttachmentOut(BaseModel):
+    id: int
+    task_id: int
+    image_url: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TaskOut(TaskBase):
     id: int
     project_id: int
@@ -195,6 +210,7 @@ class TaskOut(TaskBase):
     sprint: Optional[SprintSummary] = None
     assignee: Optional[UserSummary] = None
     reporter: Optional[UserSummary] = None
+    attachments: list[TaskAttachmentOut] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

@@ -72,6 +72,45 @@ class GeminiClient:
             )
         return text
 
+    def generate_json(self, *, prompt: str, images: list[tuple[bytes, str]] | None = None) -> str:
+        """Generic structured-JSON generation, optionally grounded in
+        zero or more images. Used by the AI test-case generator, which —
+        unlike generate_bug_json (always exactly one screenshot) — may
+        have zero, one, or several reference screenshots attached to a
+        task, or none at all for a bug/task with only text fields.
+        """
+        if not self._configured:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="GEMINI_API_KEY is not configured on the server.",
+            )
+
+        contents = [types.Part.from_bytes(data=data, mime_type=mime) for data, mime in (images or [])]
+        contents.append(prompt)
+
+        try:
+            response = self._client.models.generate_content(
+                model=self._model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=0.2,
+                    response_mime_type="application/json",
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Gemini request failed: {exc}",
+            ) from exc
+
+        text = getattr(response, "text", None)
+        if not text:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Gemini returned an empty response.",
+            )
+        return text
+
     def generate_text(self, *, prompt: str) -> str:
         """Plain text (no image) generation — used by the AI Assistant to
         turn a bundle of real query results into a natural-language

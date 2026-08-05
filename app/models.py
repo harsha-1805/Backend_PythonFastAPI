@@ -296,6 +296,13 @@ class Task(Base):
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    # Structured Given/When/Then-style (or plain bullet) acceptance
+    # criteria — kept separate from `description` (the free-form
+    # "what/why") so the AI test-case generator has a distinct signal
+    # for "what conditions must actually be verified", which produces
+    # far more accurate, non-redundant generated test cases than
+    # scraping criteria back out of a general description.
+    acceptance_criteria = Column(Text, nullable=True)
     status = Column(String(30), nullable=False, default="To Do")  # To Do/In Progress/Done
     due_date = Column(Date, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -308,6 +315,31 @@ class Task(Base):
     # Bugs saved from the AI Bug Generator (or manually) against this task.
     bugs = relationship("Bug", back_populates="task", foreign_keys="Bug.task_id")
     subtasks = relationship("SubTask", back_populates="task", cascade="all, delete-orphan")
+    # Reference screenshots/mockups attached to the task (design specs,
+    # expected-UI shots, etc.) — fed to the AI test-case generator
+    # alongside the description/acceptance criteria so it can ground
+    # generated steps in what the screen actually looks like.
+    attachments = relationship(
+        "TaskAttachment", back_populates="task", cascade="all, delete-orphan", order_by="TaskAttachment.created_at"
+    )
+
+
+class TaskAttachment(Base):
+    """A reference screenshot attached to a Task (separate from a Bug's
+    single `image_url` — a task can carry several, e.g. a design mock
+    plus an "expected result" shot) used as extra visual grounding for
+    the AI test-case generator.
+    """
+
+    __tablename__ = "task_attachments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
+    image_url = Column(String(500), nullable=False)
+    uploaded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    task = relationship("Task", back_populates="attachments")
 
 
 class SubTask(Base):

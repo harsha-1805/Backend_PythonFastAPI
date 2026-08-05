@@ -33,6 +33,7 @@ from app.routers import (
     sprints_router,
     subtasks_router,
     tasks_router,
+    test_cases_router,
 )
 from app.services.role_service import seed_roles_and_permissions
 
@@ -50,6 +51,7 @@ Base.metadata.create_all(bind=engine)
 # AI Bug Generator to persist evidence screenshots) exists before we try
 # to mount it as static files below.
 Path(settings.upload_dir, "bugs").mkdir(parents=True, exist_ok=True)
+Path(settings.upload_dir, "tasks").mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
     title=settings.app_name,
@@ -164,6 +166,7 @@ app.include_router(audit_router.router)
 app.include_router(dashboard_router.router)
 app.include_router(reports_router.router)
 app.include_router(ai_assistant_router.router)
+app.include_router(test_cases_router.router)
 
 
 @app.on_event("startup")
