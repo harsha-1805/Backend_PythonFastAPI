@@ -74,6 +74,7 @@ class ProjectUpdate(BaseModel):
 
 class ProjectOut(ProjectBase):
     id: int
+    shortcode: Optional[str] = None
     owner: Optional[UserSummary] = None
     created_at: datetime
     updated_at: datetime
@@ -205,6 +206,7 @@ class TaskAttachmentOut(BaseModel):
 
 class TaskOut(TaskBase):
     id: int
+    custom_id: Optional[str] = None
     project_id: int
     sprint_id: Optional[int] = None
     sprint: Optional[SprintSummary] = None
@@ -264,6 +266,7 @@ class SubTaskUpdate(BaseModel):
 
 class SubTaskOut(SubTaskBase):
     id: int
+    custom_id: Optional[str] = None
     task_id: int
     assignee: Optional[UserSummary] = None
     reporter: Optional[UserSummary] = None
@@ -329,6 +332,7 @@ class BugUpdate(BaseModel):
 
 class BugOut(BaseModel):
     id: int
+    custom_id: Optional[str] = None
     project_id: int
     sprint_id: Optional[int] = None
     task_id: Optional[int] = None

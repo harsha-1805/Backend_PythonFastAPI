@@ -13,6 +13,7 @@ import logging
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Bug, Project, Task
+from app.services import custom_id_service
 from app.services import project_access
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ def serialize(bug: Bug) -> dict:
     """Build a plain dict matching BugOut, decoding steps_to_reproduce."""
     return {
         "id": bug.id,
+        "custom_id": bug.custom_id,
         "project_id": bug.project_id,
         "sprint_id": bug.sprint_id,
         "task_id": bug.task_id,
@@ -126,7 +128,9 @@ def create_bug(db: Session, *, reported_by: int, **fields) -> Bug:
     )
 
     steps = fields.pop("steps_to_reproduce", [])
-    bug = Bug(project_id=project_id, reported_by=reported_by, steps_to_reproduce=_encode(steps), **fields)
+    project_obj = db.query(Project).filter(Project.id == project_id).first()
+    custom_id = custom_id_service.next_bug_custom_id(db, project_obj) if project_obj else None
+    bug = Bug(project_id=project_id, reported_by=reported_by, steps_to_reproduce=_encode(steps), custom_id=custom_id, **fields)
     db.add(bug)
     try:
         db.commit()

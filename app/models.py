@@ -177,6 +177,9 @@ class Project(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(150), nullable=False)
+    # Auto-derived 2-4 letter prefix used as the custom_id prefix for this
+    # project's tasks and bugs. e.g. "Mumbai Development" -> "MD"
+    shortcode = Column(String(10), nullable=True)
     description = Column(Text, nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -235,6 +238,9 @@ class Bug(Base):
     __tablename__ = "bugs"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Human-readable ID derived from project shortcode, e.g. "MD-3".
+    # Nullable so existing rows (before migration) keep working.
+    custom_id = Column(String(20), nullable=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     sprint_id = Column(Integer, ForeignKey("sprints.id", ondelete="SET NULL"), nullable=True)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -286,6 +292,8 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Human-readable ID derived from project shortcode, e.g. "MD-5T".
+    custom_id = Column(String(20), nullable=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     # --- Phase 6: a task can optionally be scoped to a sprint. Nullable —
     # a task doesn't have to be in a sprint (e.g. backlog tasks).
@@ -353,6 +361,8 @@ class SubTask(Base):
     __tablename__ = "subtasks"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Human-readable ID derived from project shortcode, e.g. "MD-5T-2S".
+    custom_id = Column(String(25), nullable=True, index=True)
     task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False)
     assigned_to = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

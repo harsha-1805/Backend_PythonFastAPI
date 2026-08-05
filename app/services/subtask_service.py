@@ -4,7 +4,7 @@ import logging
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import SubTask, Task
-from app.services import project_access
+from app.services import custom_id_service, project_access
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ def create_subtask(
     # project, it always inherits the task's.
     project_access.assert_valid_assignee(db, project_id=task.project_id, assignee_id=assigned_to)
 
+    subtask_custom_id = custom_id_service.next_subtask_custom_id(db, task)
     subtask = SubTask(
         task_id=task_id,
         title=title,
@@ -57,6 +58,7 @@ def create_subtask(
         due_date=due_date,
         assigned_to=assigned_to,
         reported_by=reported_by,
+        custom_id=subtask_custom_id,
     )
     db.add(subtask)
     try:

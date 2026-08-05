@@ -4,6 +4,7 @@ import logging
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Project, Sprint, Task, TaskAttachment
+from app.services import custom_id_service
 from app.services import project_access
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,8 @@ def create_task(
     # Admin/Lead) — see project_access.assert_valid_assignee.
     project_access.assert_valid_assignee(db, project_id=project_id, assignee_id=assigned_to)
 
+    project_obj = db.query(Project).filter(Project.id == project_id).first()
+    task_custom_id = custom_id_service.next_task_custom_id(db, project_obj) if project_obj else None
     task = Task(
         project_id=project_id,
         title=title,
@@ -85,6 +88,7 @@ def create_task(
         assigned_to=assigned_to,
         sprint_id=sprint_id,
         reported_by=reported_by,
+        custom_id=task_custom_id,
     )
     db.add(task)
     try:

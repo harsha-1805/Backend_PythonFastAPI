@@ -11,6 +11,7 @@ import logging
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Project, ProjectMember, User
+from app.services import custom_id_service
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,8 @@ def create_project(
     happening right at creation — members can still be added/removed
     later via add_project_members / remove_project_member.
     """
-    project = Project(name=name, description=description, owner_id=owner_id)
+    shortcode = custom_id_service.generate_shortcode(db, name)
+    project = Project(name=name, description=description, owner_id=owner_id, shortcode=shortcode)
     db.add(project)
     try:
         db.flush()  # get project.id without a full commit yet
