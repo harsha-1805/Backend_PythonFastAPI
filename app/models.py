@@ -410,3 +410,35 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     actor = relationship("User", foreign_keys=[actor_id])
+
+
+# ---------------------------------------------------------------------------
+# Saved Test Cases — persisted AI-generated test case sets, linked to a
+# project and optionally a specific task or bug.  Stored as CSV text +
+# the original JSON rows so the frontend can both download the CSV and
+# render a live preview table.
+# ---------------------------------------------------------------------------
+class SavedTestCase(Base):
+    """One saved generation result — a full set of AI test cases for
+    a specific Task or Bug, saved by a user for later access."""
+
+    __tablename__ = "saved_test_cases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True, index=True)
+    bug_id = Column(Integer, ForeignKey("bugs.id", ondelete="CASCADE"), nullable=True, index=True)
+    entity_type = Column(String(10), nullable=False)   # "task" | "bug"
+    entity_title = Column(String(255), nullable=False)
+    # Full CSV text — frontend turns this into a downloadable Blob.
+    csv_data = Column(Text, nullable=False)
+    # JSON array of row dicts — used to render the live preview table.
+    test_cases_json = Column(Text, nullable=False)
+    saved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    project = relationship("Project")
+    task = relationship("Task", foreign_keys=[task_id])
+    bug = relationship("Bug", foreign_keys=[bug_id])
+    saver = relationship("User", foreign_keys=[saved_by])

@@ -1,19 +1,8 @@
 """
-AI Test Case Generator.
+AI Test Case Generator + persistence layer.
 
-Turns a Task (or a Bug) — plus everything attached to it that actually
-helps a QA engineer write accurate cases: its acceptance criteria,
-subtasks, sprint/project context, and any reference screenshots — into
-a set of structured test cases via Gemini, then formats them as CSV
-for direct download.
-
-Deliberately grounded, not free-generated: the prompt is built entirely
-from real fields already on the Task/Bug (see `_task_context` /
-`_bug_context` below) so the output reflects what was actually
-specified, not a generic guess at what the feature probably does. This
-is exactly why `Task.acceptance_criteria` and `Task.attachments` were
-added — a plain title/description alone produces vague, low-signal
-cases; acceptance criteria + real screenshots produce specific ones.
+Turns a Task (or a Bug) into a set of structured test cases via Gemini,
+formats them as CSV, and optionally saves / lists them from the DB.
 """
 from __future__ import annotations
 
@@ -21,21 +10,19 @@ import csv
 import io
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import Bug, SubTask, Task
+from app.models import Bug, SavedTestCase, SubTask, Task
 from app.services.llm.gemini_client import GeminiClient
 
 _gemini_client = GeminiClient()
 
 _CODE_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
-# The columns every generated CSV has, in this order — also doubles as
-# the set of keys every row is normalized to before writing, so a
-# short/malformed model response never produces a ragged CSV.
 CSV_FIELDS = [
     "Test Case ID",
     "Title",
@@ -53,12 +40,6 @@ def _strip_code_fences(text: str) -> str:
 
 
 def _image_bytes(image_url: str | None) -> tuple[bytes, str] | None:
-    """Reads a previously-uploaded screenshot back off disk given its
-    public URL path (e.g. "/uploads/tasks/<uuid>.png"), for sending to
-    Gemini as multimodal input. Returns None (skips it) rather than
-    raising if the file is somehow missing — a missing screenshot
-    shouldn't block generation, just reduce its visual grounding.
-    """
     if not image_url or not image_url.startswith(settings.upload_url_prefix):
         return None
     relative = image_url[len(settings.upload_url_prefix):].lstrip("/")
@@ -140,6 +121,26 @@ def _build_prompt(context_text: str) -> str:
     )
 
 
+def _build_regenerate_prompt(context_text: str, feedback: str) -> str:
+    return (
+        "You are a senior QA engineer revising a test case suite based on reviewer feedback.\n\n"
+        "ORIGINAL ITEM CONTEXT:\n"
+        f"{context_text}\n\n"
+        "REVIEWER FEEDBACK (what was wrong / what to change or add):\n"
+        f"{feedback}\n\n"
+        "Produce a REVISED set of 5 to 12 test cases that:\n"
+        "- Directly address every point raised in the reviewer feedback.\n"
+        "- Keep valid test cases from the implied original set where they still apply.\n"
+        "- Include positive (happy path), negative (invalid input/error handling), and edge cases.\n"
+        "- Derive cases from each acceptance criterion where given.\n"
+        "- Use concrete, numbered steps.\n\n"
+        "Return ONLY a JSON array (no markdown, no commentary) where each element has exactly these "
+        "string keys: \"title\", \"type\" (Positive | Negative | Edge Case), "
+        "\"priority\" (High | Medium | Low), \"preconditions\", \"steps\", \"test_data\", "
+        "\"expected_result\"."
+    )
+
+
 def _parse_test_cases(raw_text: str) -> list[dict]:
     cleaned = _strip_code_fences(raw_text)
     try:
@@ -194,6 +195,93 @@ def generate(db: Session, *, entity_type: str, entity_id: int) -> tuple[str, lis
     raw = _gemini_client.generate_json(prompt=prompt, images=images)
     rows = _parse_test_cases(raw)
     return entity_title, rows
+
+
+def regenerate(db: Session, *, entity_type: str, entity_id: int, feedback: str) -> tuple[str, list[dict]]:
+    """Like generate() but incorporates user feedback to fix/improve
+    the previous result — the model sees the full item context again
+    PLUS the reviewer's notes, so it can correct specific problems."""
+    if entity_type == "task":
+        task = db.query(Task).filter(Task.id == entity_id).first()
+        if task is None:
+            raise LookupError("Task not found")
+        context_text, images = _task_context(db, task)
+        entity_title = task.title
+    elif entity_type == "bug":
+        bug = db.query(Bug).filter(Bug.id == entity_id).first()
+        if bug is None:
+            raise LookupError("Bug not found")
+        context_text, images = _bug_context(bug)
+        entity_title = bug.title
+    else:
+        raise ValueError("entity_type must be 'task' or 'bug'")
+
+    prompt = _build_regenerate_prompt(context_text, feedback)
+    raw = _gemini_client.generate_json(prompt=prompt, images=images)
+    rows = _parse_test_cases(raw)
+    return entity_title, rows
+
+
+def save_test_cases(
+    db: Session,
+    *,
+    entity_type: str,
+    entity_id: int,
+    entity_title: str,
+    project_id: int,
+    test_cases: list[dict],
+    csv_data: str,
+    saved_by_id: int,
+) -> SavedTestCase:
+    """Persist a generated test case set to the DB so it can be accessed
+    later from the Test Cases Library (Tasks page and dedicated view)."""
+    task_id = entity_id if entity_type == "task" else None
+    bug_id = entity_id if entity_type == "bug" else None
+
+    record = SavedTestCase(
+        project_id=project_id,
+        task_id=task_id,
+        bug_id=bug_id,
+        entity_type=entity_type,
+        entity_title=entity_title,
+        csv_data=csv_data,
+        test_cases_json=json.dumps(test_cases),
+        saved_by=saved_by_id,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+def list_saved_test_cases(
+    db: Session,
+    *,
+    project_id: int | None = None,
+    task_id: int | None = None,
+    bug_id: int | None = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> list[SavedTestCase]:
+    q = db.query(SavedTestCase)
+    if project_id:
+        q = q.filter(SavedTestCase.project_id == project_id)
+    if task_id:
+        q = q.filter(SavedTestCase.task_id == task_id)
+    if bug_id:
+        q = q.filter(SavedTestCase.bug_id == bug_id)
+    return q.order_by(SavedTestCase.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def delete_saved_test_case(db: Session, *, record_id: int) -> bool:
+    record = db.query(SavedTestCase).filter(SavedTestCase.id == record_id).first()
+    if not record:
+        return False
+    db.delete(record)
+    db.commit()
+    return True
 
 
 def to_csv(entity_title: str, rows: list[dict]) -> str:
