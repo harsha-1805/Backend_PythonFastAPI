@@ -80,6 +80,28 @@ def _task_context(db: Session, task: Task) -> tuple[str, list[tuple[bytes, str]]
     return text, images
 
 
+def _subtask_context(subtask: SubTask) -> tuple[str, list[tuple[bytes, str]]]:
+    """Build AI context for a SubTask. A subtask has no acceptance
+    criteria or attachments of its own — it inherits project/sprint
+    context from its parent Task, whose title/description/acceptance
+    criteria are included too so the generator understands what the
+    subtask is contributing to.
+    """
+    task = subtask.task
+    text = (
+        f"Item type: SubTask\n"
+        f"Project: {task.project.name if task and task.project else 'n/a'}\n"
+        f"Sprint: {task.sprint.name if task and task.sprint else 'n/a'}\n"
+        f"Parent task: {task.title if task else 'n/a'}\n"
+        f"Parent task description: {task.description or 'n/a' if task else 'n/a'}\n"
+        f"Parent task acceptance criteria: {task.acceptance_criteria or 'n/a' if task else 'n/a'}\n"
+        f"Title: {subtask.title}\n"
+        f"Detailed description: {subtask.description or 'n/a'}\n"
+        f"Status: {subtask.status}"
+    )
+    return text, []
+
+
 def _bug_context(bug: Bug) -> tuple[str, list[tuple[bytes, str]]]:
     text = (
         f"Item type: Bug\n"
@@ -188,8 +210,14 @@ def generate(db: Session, *, entity_type: str, entity_id: int) -> tuple[str, lis
             raise LookupError("Bug not found")
         context_text, images = _bug_context(bug)
         entity_title = bug.title
+    elif entity_type == "subtask":
+        subtask = db.query(SubTask).filter(SubTask.id == entity_id).first()
+        if subtask is None:
+            raise LookupError("Subtask not found")
+        context_text, images = _subtask_context(subtask)
+        entity_title = subtask.title
     else:
-        raise ValueError("entity_type must be 'task' or 'bug'")
+        raise ValueError("entity_type must be 'task', 'bug', or 'subtask'")
 
     prompt = _build_prompt(context_text)
     raw = _gemini_client.generate_json(prompt=prompt, images=images)
@@ -213,8 +241,14 @@ def regenerate(db: Session, *, entity_type: str, entity_id: int, feedback: str) 
             raise LookupError("Bug not found")
         context_text, images = _bug_context(bug)
         entity_title = bug.title
+    elif entity_type == "subtask":
+        subtask = db.query(SubTask).filter(SubTask.id == entity_id).first()
+        if subtask is None:
+            raise LookupError("Subtask not found")
+        context_text, images = _subtask_context(subtask)
+        entity_title = subtask.title
     else:
-        raise ValueError("entity_type must be 'task' or 'bug'")
+        raise ValueError("entity_type must be 'task', 'bug', or 'subtask'")
 
     prompt = _build_regenerate_prompt(context_text, feedback)
     raw = _gemini_client.generate_json(prompt=prompt, images=images)
@@ -237,11 +271,13 @@ def save_test_cases(
     later from the Test Cases Library (Tasks page and dedicated view)."""
     task_id = entity_id if entity_type == "task" else None
     bug_id = entity_id if entity_type == "bug" else None
+    subtask_id = entity_id if entity_type == "subtask" else None
 
     record = SavedTestCase(
         project_id=project_id,
         task_id=task_id,
         bug_id=bug_id,
+        subtask_id=subtask_id,
         entity_type=entity_type,
         entity_title=entity_title,
         csv_data=csv_data,
@@ -262,6 +298,7 @@ def list_saved_test_cases(
     project_id: int | None = None,
     task_id: int | None = None,
     bug_id: int | None = None,
+    subtask_id: int | None = None,
     skip: int = 0,
     limit: int = 100,
 ) -> list[SavedTestCase]:
@@ -272,6 +309,8 @@ def list_saved_test_cases(
         q = q.filter(SavedTestCase.task_id == task_id)
     if bug_id:
         q = q.filter(SavedTestCase.bug_id == bug_id)
+    if subtask_id:
+        q = q.filter(SavedTestCase.subtask_id == subtask_id)
     return q.order_by(SavedTestCase.created_at.desc()).offset(skip).limit(limit).all()
 
 

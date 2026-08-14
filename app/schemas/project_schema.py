@@ -276,6 +276,17 @@ class SubTaskOut(SubTaskBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class SubTaskSummary(BaseModel):
+    """Lightweight subtask shape embedded inside bug responses."""
+
+    id: int
+    title: str
+    status: str
+    task_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ---------------------------------------------------------------------------
 # Bugs
 # ---------------------------------------------------------------------------
@@ -305,6 +316,13 @@ class BugCreate(BugBase):
     task_id: Optional[int] = Field(
         None, description="Optional task to assign this (often AI-generated) bug to"
     )
+    subtask_id: Optional[int] = Field(
+        None,
+        description=(
+            "Optional subtask to assign this bug to. If task_id is omitted, it's "
+            "auto-derived from the subtask's parent task."
+        ),
+    )
     assigned_to: Optional[int] = None
     is_ai_generated: bool = False
 
@@ -316,6 +334,7 @@ class BugUpdate(BaseModel):
     status: Optional[str] = None
     sprint_id: Optional[int] = None
     task_id: Optional[int] = None
+    subtask_id: Optional[int] = None
     assigned_to: Optional[int] = None
     summary: Optional[str] = None
     description: Optional[str] = None
@@ -337,6 +356,8 @@ class BugOut(BaseModel):
     sprint_id: Optional[int] = None
     task_id: Optional[int] = None
     task: Optional[TaskSummary] = None
+    subtask_id: Optional[int] = None
+    subtask: Optional[SubTaskSummary] = None
     title: str
     severity: str
     priority: str

@@ -12,7 +12,7 @@ import logging
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Bug, Project, Task
+from app.models import Bug, Project, SubTask, Task
 from app.services import custom_id_service
 from app.services import project_access
 
@@ -41,6 +41,8 @@ def serialize(bug: Bug) -> dict:
         "sprint_id": bug.sprint_id,
         "task_id": bug.task_id,
         "task": bug.task,
+        "subtask_id": bug.subtask_id,
+        "subtask": bug.subtask,
         "title": bug.title,
         "severity": bug.severity,
         "priority": bug.priority,
@@ -73,11 +75,15 @@ def list_bugs(
     assigned_to: int | None = None,
     search: str | None = None,
     project_ids: set[int] | None = None,
+    subtask_id: int | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[Bug], int]:
     query = db.query(Bug).options(
-        joinedload(Bug.reporter), joinedload(Bug.assignee), joinedload(Bug.task).joinedload(Task.sprint)
+        joinedload(Bug.reporter),
+        joinedload(Bug.assignee),
+        joinedload(Bug.task).joinedload(Task.sprint),
+        joinedload(Bug.subtask),
     )
 
     if project_ids is not None:
@@ -86,6 +92,8 @@ def list_bugs(
         query = query.filter(Bug.project_id == project_id)
     if sprint_id is not None:
         query = query.filter(Bug.sprint_id == sprint_id)
+    if subtask_id is not None:
+        query = query.filter(Bug.subtask_id == subtask_id)
     if status:
         query = query.filter(Bug.status == status)
     if assigned_to is not None:
@@ -110,6 +118,7 @@ def get_bug(db: Session, *, bug_id: int) -> Bug | None:
             joinedload(Bug.reporter),
             joinedload(Bug.assignee),
             joinedload(Bug.task).joinedload(Task.sprint),
+            joinedload(Bug.subtask),
         )
         .filter(Bug.id == bug_id)
         .first()
@@ -120,6 +129,22 @@ def create_bug(db: Session, *, reported_by: int, **fields) -> Bug:
     project_id = fields.pop("project_id")
     if not db.query(Project).filter(Project.id == project_id).first():
         raise ValueError("That project does not exist")
+
+    # A bug can be linked to a subtask (finer-grained than task_id).
+    # Validate it belongs to a task in the same project, and auto-fill
+    # task_id from the subtask's parent if the caller didn't set one
+    # explicitly — mirrors how the frontend carries a task's sprint onto
+    # a bug automatically.
+    subtask_id = fields.get("subtask_id")
+    if subtask_id is not None:
+        subtask = db.query(SubTask).filter(SubTask.id == subtask_id).first()
+        if subtask is None:
+            raise ValueError("That subtask does not exist")
+        parent_task = db.query(Task).filter(Task.id == subtask.task_id).first()
+        if parent_task is None or parent_task.project_id != project_id:
+            raise ValueError("That subtask does not belong to this project")
+        if not fields.get("task_id"):
+            fields["task_id"] = subtask.task_id
 
     # A bug can only be assigned to someone on this project's team (or
     # Admin/Lead) — same rule as tasks/subtasks.
@@ -147,6 +172,16 @@ def update_bug(db: Session, *, bug_id: int, **fields) -> Bug:
     bug = db.query(Bug).filter(Bug.id == bug_id).first()
     if bug is None:
         raise LookupError("Bug not found")
+
+    if "subtask_id" in fields and fields["subtask_id"] is not None:
+        subtask = db.query(SubTask).filter(SubTask.id == fields["subtask_id"]).first()
+        if subtask is None:
+            raise ValueError("That subtask does not exist")
+        parent_task = db.query(Task).filter(Task.id == subtask.task_id).first()
+        if parent_task is None or parent_task.project_id != bug.project_id:
+            raise ValueError("That subtask does not belong to this project")
+        if not fields.get("task_id"):
+            fields["task_id"] = subtask.task_id
 
     if "assigned_to" in fields and fields["assigned_to"] is not None:
         project_access.assert_valid_assignee(

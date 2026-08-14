@@ -279,9 +279,16 @@ class Bug(Base):
     # onto a task the user picks from a dropdown.
     task_id = Column(Integer, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True)
 
+    # --- Link a bug to a specific SubTask (finer-grained than task_id
+    # above). Nullable/optional — a bug can be linked to a task only, a
+    # subtask only (task_id is auto-derived from the subtask's parent in
+    # that case, see bug_service.create_bug), both, or neither.
+    subtask_id = Column(Integer, ForeignKey("subtasks.id", ondelete="SET NULL"), nullable=True)
+
     project = relationship("Project", back_populates="bugs")
     sprint = relationship("Sprint", back_populates="bugs")
     task = relationship("Task", back_populates="bugs", foreign_keys=[task_id])
+    subtask = relationship("SubTask", foreign_keys=[subtask_id])
     reporter = relationship("User", back_populates="reported_bugs", foreign_keys=[reported_by])
     assignee = relationship("User", back_populates="assigned_bugs", foreign_keys=[assigned_to])
 
@@ -428,7 +435,11 @@ class SavedTestCase(Base):
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True, index=True)
     bug_id = Column(Integer, ForeignKey("bugs.id", ondelete="CASCADE"), nullable=True, index=True)
-    entity_type = Column(String(10), nullable=False)   # "task" | "bug"
+    # A saved set can also belong to a SubTask directly (in addition to /
+    # instead of a parent Task) — mirrors how Bug.subtask_id lets a bug be
+    # filed against a subtask specifically.
+    subtask_id = Column(Integer, ForeignKey("subtasks.id", ondelete="CASCADE"), nullable=True, index=True)
+    entity_type = Column(String(10), nullable=False)   # "task" | "bug" | "subtask"
     entity_title = Column(String(255), nullable=False)
     # Full CSV text — frontend turns this into a downloadable Blob.
     csv_data = Column(Text, nullable=False)
@@ -441,4 +452,5 @@ class SavedTestCase(Base):
     project = relationship("Project")
     task = relationship("Task", foreign_keys=[task_id])
     bug = relationship("Bug", foreign_keys=[bug_id])
+    subtask = relationship("SubTask", foreign_keys=[subtask_id])
     saver = relationship("User", foreign_keys=[saved_by])

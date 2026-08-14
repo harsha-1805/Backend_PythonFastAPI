@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # "Invite user") are allowed to use. Keeps out throwaway/unknown
     # domains like "@ok.lol". Add your company domain via .env, e.g.
     # ALLOWED_EMAIL_DOMAINS=gmail.com,yourcompany.com
-    allowed_email_domains: str = "gmail.com,outlook.com,yahoo.com,hotmail.com,ebit.com"
+    allowed_email_domains: str = "gmail.com,outlook.com,yahoo.com,hotmail.com,ebit.com,efficientbrains.com"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

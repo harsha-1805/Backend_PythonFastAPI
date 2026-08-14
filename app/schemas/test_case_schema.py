@@ -5,12 +5,12 @@ from pydantic import BaseModel, Field
 
 
 class TestCaseGenerateRequest(BaseModel):
-    entity_type: Literal["task", "bug"]
+    entity_type: Literal["task", "bug", "subtask"]
     entity_id: int
 
 
 class TestCaseRegenerateRequest(BaseModel):
-    entity_type: Literal["task", "bug"]
+    entity_type: Literal["task", "bug", "subtask"]
     entity_id: int
     # User's feedback about what's wrong and what to improve/add.
     # e.g. "Add more edge cases for the password field" or
@@ -19,7 +19,7 @@ class TestCaseRegenerateRequest(BaseModel):
 
 
 class TestCaseGenerateResponse(BaseModel):
-    entity_type: Literal["task", "bug"]
+    entity_type: Literal["task", "bug", "subtask"]
     entity_id: int
     entity_title: str
     count: int
@@ -30,7 +30,7 @@ class TestCaseGenerateResponse(BaseModel):
 
 
 class TestCaseSaveRequest(BaseModel):
-    entity_type: Literal["task", "bug"]
+    entity_type: Literal["task", "bug", "subtask"]
     entity_id: int
     entity_title: str
     test_cases: list[dict]
@@ -43,6 +43,7 @@ class SavedTestCaseOut(BaseModel):
     project_id: int
     task_id: Optional[int]
     bug_id: Optional[int]
+    subtask_id: Optional[int] = None
     entity_type: str
     entity_title: str
     csv_data: str

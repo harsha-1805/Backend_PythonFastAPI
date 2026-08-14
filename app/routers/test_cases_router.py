@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_permission
-from app.models import Bug, Project, Task, User
+from app.models import Bug, Project, SubTask, Task, User
 from app.schemas.test_case_schema import (
     SavedTestCaseOut,
     TestCaseGenerateRequest,
@@ -24,18 +24,28 @@ router = APIRouter(prefix="/api/v1/ai/test-cases", tags=["AI Test Cases"])
 def _resolve_entity_and_project(
     db: Session, entity_type: str, entity_id: int, current_user: User
 ):
-    """Resolve the entity, verify it exists, return (entity, project_id)."""
+    """Resolve the entity, verify it exists, return (entity, project_id).
+
+    A SubTask has no project_id of its own — it always inherits one
+    through its parent Task, so that's resolved via the relationship
+    before the access check.
+    """
     if entity_type == "task":
         entity = db.query(Task).filter(Task.id == entity_id).first()
+        project_id = entity.project_id if entity else None
+    elif entity_type == "subtask":
+        entity = db.query(SubTask).filter(SubTask.id == entity_id).first()
+        project_id = entity.task.project_id if entity and entity.task else None
     else:
         entity = db.query(Bug).filter(Bug.id == entity_id).first()
+        project_id = entity.project_id if entity else None
 
     if entity is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{entity_type.title()} not found",
         )
-    project_access.assert_project_access(db, user=current_user, project_id=entity.project_id)
+    project_access.assert_project_access(db, user=current_user, project_id=project_id)
     return entity
 
 
@@ -135,18 +145,19 @@ def list_saved_test_cases(
     project_id: Optional[int] = Query(None),
     task_id: Optional[int] = Query(None),
     bug_id: Optional[int] = Query(None),
+    subtask_id: Optional[int] = Query(None),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("ai_assistant.use")),
 ):
-    """Return saved test case sets. Filterable by project_id, task_id, and bug_id."""
+    """Return saved test case sets. Filterable by project_id, task_id, bug_id, and subtask_id."""
     # If a project_id filter is supplied, enforce membership.
     if project_id:
         project_access.assert_project_access(db, user=current_user, project_id=project_id)
 
     records = test_case_service.list_saved_test_cases(
-        db, project_id=project_id, task_id=task_id, bug_id=bug_id, skip=skip, limit=limit
+        db, project_id=project_id, task_id=task_id, bug_id=bug_id, subtask_id=subtask_id, skip=skip, limit=limit
     )
     return [_to_out(r) for r in records]
 
@@ -171,6 +182,7 @@ def _to_out(record) -> SavedTestCaseOut:
         project_id=record.project_id,
         task_id=record.task_id,
         bug_id=record.bug_id,
+        subtask_id=record.subtask_id,
         entity_type=record.entity_type,
         entity_title=record.entity_title,
         csv_data=record.csv_data,

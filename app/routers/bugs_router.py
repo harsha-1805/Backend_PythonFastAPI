@@ -33,6 +33,7 @@ def list_bugs(
     status_: str | None = Query(None, alias="status"),
     assigned_to: int | None = Query(None),
     search: str | None = Query(None),
+    subtask_id: int | None = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -47,6 +48,7 @@ def list_bugs(
         assigned_to=assigned_to,
         search=search,
         project_ids=accessible_ids,
+        subtask_id=subtask_id,
         page=page,
         page_size=page_size,
     )
