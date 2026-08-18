@@ -8,7 +8,26 @@ other import site keeps working unchanged.
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+# At least one uppercase letter, one lowercase letter, one number, and one
+# special character. Length is enforced separately via Field(min_length=8).
+_PASSWORD_COMPLEXITY_MESSAGE = (
+    "Password must include at least one uppercase letter, one lowercase "
+    "letter, one number, and one special character"
+)
+
+
+def _check_password_complexity(value: str) -> str:
+    if not any(c.isupper() for c in value):
+        raise ValueError(_PASSWORD_COMPLEXITY_MESSAGE)
+    if not any(c.islower() for c in value):
+        raise ValueError(_PASSWORD_COMPLEXITY_MESSAGE)
+    if not any(c.isdigit() for c in value):
+        raise ValueError(_PASSWORD_COMPLEXITY_MESSAGE)
+    if not any(not c.isalnum() for c in value):
+        raise ValueError(_PASSWORD_COMPLEXITY_MESSAGE)
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -114,15 +133,25 @@ class ChangeOwnPasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
 
+    @field_validator("new_password")
+    @classmethod
+    def _validate_complexity(cls, value: str) -> str:
+        return _check_password_complexity(value)
+
 
 class UpdateOwnProfileRequest(BaseModel):
     """Self-service profile edit (Settings -> Profile): name/email only.
     Role/permissions can't be self-edited here — that stays admin/HR-only
     via AssignRolesRequest above.
+
+    Unlike AdminUserUpdateRequest (a genuinely partial PATCH an admin may
+    use to touch just one field on someone else's account), email is
+    required here: the Settings page always submits both fields together,
+    and every account must keep a valid email on file.
     """
 
     full_name: Optional[str] = Field(None, min_length=2, max_length=120)
-    email: Optional[EmailStr] = None
+    email: EmailStr
 
 
 class MessageResponse(BaseModel):

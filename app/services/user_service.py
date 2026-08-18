@@ -94,6 +94,8 @@ def change_own_password(
         raise ValueError("Current password is incorrect")
     if len(new_password) < 8:
         raise ValueError("New password must be at least 8 characters")
+    if verify_password(new_password, user.hashed_password):
+        raise ValueError("New password must be different from your current password")
 
     user.hashed_password = hash_password(new_password)
     user.must_change_password = False
