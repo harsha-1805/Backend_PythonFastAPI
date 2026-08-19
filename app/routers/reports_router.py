@@ -85,8 +85,15 @@ def export_report(
         )
         filename = "audit_log_report.csv"
 
+    # Prefix with a UTF-8 BOM before encoding. Excel doesn't assume UTF-8
+    # for CSV by default — without the BOM it falls back to the system
+    # codepage and any non-ASCII character (curly quotes, accented
+    # names, etc.) in a title/description renders as garbled symbols
+    # instead of the original character.
+    csv_bytes = ("\ufeff" + csv_text).encode("utf-8")
+
     return StreamingResponse(
-        iter([csv_text]),
-        media_type="text/csv",
+        iter([csv_bytes]),
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

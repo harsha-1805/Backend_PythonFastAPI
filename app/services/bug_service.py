@@ -183,6 +183,19 @@ def update_bug(db: Session, *, bug_id: int, **fields) -> Bug:
         if not fields.get("task_id"):
             fields["task_id"] = subtask.task_id
 
+    # Validation workflow: once a bug is marked "Resolved" it shouldn't
+    # jump straight to "Closed" — route it back to whoever reported it
+    # (QA, typically) so they can verify the fix before closing it out.
+    # Only kicks in on the Open/In Progress -> Resolved transition, and
+    # only if the caller isn't *already* reassigning it in this same call.
+    if (
+        fields.get("status") == "Resolved"
+        and bug.status != "Resolved"
+        and fields.get("assigned_to") is None
+        and bug.reported_by is not None
+    ):
+        fields["assigned_to"] = bug.reported_by
+
     if "assigned_to" in fields and fields["assigned_to"] is not None:
         project_access.assert_valid_assignee(
             db, project_id=bug.project_id, assignee_id=fields["assigned_to"]
