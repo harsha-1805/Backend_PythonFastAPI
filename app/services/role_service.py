@@ -153,7 +153,7 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "dashboard.view",
         "projects.view",
         "ai_bug_generator.use",
-        "bugs.view", "bugs.create",
+        "bugs.view", "bugs.create","bugs.edit",
         "tasks.view", "tasks.edit",
         "subtasks.view", "subtasks.edit",
         "sprints.view",
