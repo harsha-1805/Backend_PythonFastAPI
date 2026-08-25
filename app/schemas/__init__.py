@@ -46,6 +46,13 @@ class UserOut(UserBase):
     created_at: datetime
     role: RoleSummary | None = None
     roles: List[RoleSummary] = Field(default_factory=list)
+    # Flattened permission codes from every role this user holds (e.g.
+    # "bugs.delete", "tasks.edit") — lets the frontend disable/hide
+    # individual buttons per permission. Read-only, sourced from the
+    # `permissions` property on the User model; the backend's
+    # `require_permission(...)` dependency remains the real enforcement,
+    # this is only for driving what the UI shows.
+    permissions: List[str] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -139,6 +146,16 @@ from app.schemas.audit_schema import (  # noqa: E402
     AuditLogOut,
 )
 
+from app.schemas.comment_schema import (  # noqa: E402
+    CommentCreate,
+    CommentOut,
+)
+
+from app.schemas.notification_schema import (  # noqa: E402
+    NotificationListResponse,
+    NotificationOut,
+)
+
 __all__ = [
     "UserBase",
     "UserCreate",
@@ -188,4 +205,8 @@ __all__ = [
     "BugListResponse",
     "AuditLogOut",
     "AuditLogListResponse",
+    "CommentCreate",
+    "CommentOut",
+    "NotificationOut",
+    "NotificationListResponse",
 ]

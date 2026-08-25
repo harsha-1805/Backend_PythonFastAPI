@@ -141,7 +141,8 @@ def assign_role(db: Session, *, user_id: int, role_id: int, acting_user: User) -
     if role is None:
         raise ValueError("That role does not exist")
 
-    if user.id == acting_user.id and role.name != "Admin":
+    acting_user_is_admin = any(r.name == "Admin" for r in acting_user.roles)
+    if user.id == acting_user.id and acting_user_is_admin and role.name != "Admin":
         raise ValueError("You can't demote yourself away from Admin")
 
     set_user_roles(db, user=user, role_ids=[role.id])
@@ -165,7 +166,16 @@ def assign_roles(db: Session, *, user_id: int, role_ids: list[int], acting_user:
         raise ValueError("One or more selected roles do not exist")
 
     role_names = {r.name for r in roles}
-    if user.id == acting_user.id and "Admin" not in role_names:
+    # Guards against the one scenario this check exists for: an Admin
+    # removing their own Admin role (which could leave the system with
+    # no Admin at all). It must only fire when the acting user currently
+    # HAS Admin and is about to lose it — not for any user touching
+    # their own roles. The old check fired for anyone editing their own
+    # roles (e.g. an HR user, who never had Admin to begin with), which
+    # made every self role-change fail with a nonsensical "demote
+    # yourself away from Admin" error.
+    acting_user_is_admin = any(r.name == "Admin" for r in acting_user.roles)
+    if user.id == acting_user.id and acting_user_is_admin and "Admin" not in role_names:
         raise ValueError("You can't demote yourself away from Admin")
 
     set_user_roles(db, user=user, role_ids=unique_role_ids)

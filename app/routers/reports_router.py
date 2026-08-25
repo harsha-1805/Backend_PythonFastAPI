@@ -65,35 +65,43 @@ def export_report(
     date_to: date | None = Query(None),
     status: str | None = Query(None, description="Filter (bugs/tasks only)"),
     severity: str | None = Query(None, description="Filter (bugs only)"),
+    sprint_id: int | None = Query(None, description="Filter (bugs/tasks only)"),
+    task_id: int | None = Query(None, description="Filter (bugs/tasks only)"),
     entity_type: str | None = Query(None, description="Filter (audit only)"),
     db: Session = Depends(get_db),
     _: User = Depends(require_permission("reports.view")),
 ):
     if type == "bugs":
-        csv_text = reports_service.export_bugs_csv(
-            db, project_id=project_id, date_from=date_from, date_to=date_to, status=status, severity=severity
+        xlsx_bytes = reports_service.export_bugs_xlsx(
+            db,
+            project_id=project_id,
+            date_from=date_from,
+            date_to=date_to,
+            status=status,
+            severity=severity,
+            sprint_id=sprint_id,
+            task_id=task_id,
         )
-        filename = "bugs_report.csv"
+        filename = "bugs_report.xlsx"
     elif type == "tasks":
-        csv_text = reports_service.export_tasks_csv(
-            db, project_id=project_id, date_from=date_from, date_to=date_to, status=status
+        xlsx_bytes = reports_service.export_tasks_xlsx(
+            db,
+            project_id=project_id,
+            date_from=date_from,
+            date_to=date_to,
+            status=status,
+            sprint_id=sprint_id,
+            task_id=task_id,
         )
-        filename = "tasks_report.csv"
+        filename = "tasks_report.xlsx"
     else:  # "audit" — and safe fallback for any unrecognized value
-        csv_text = reports_service.export_audit_log_csv(
+        xlsx_bytes = reports_service.export_audit_log_xlsx(
             db, project_id=project_id, entity_type=entity_type, date_from=date_from, date_to=date_to
         )
-        filename = "audit_log_report.csv"
-
-    # Prefix with a UTF-8 BOM before encoding. Excel doesn't assume UTF-8
-    # for CSV by default — without the BOM it falls back to the system
-    # codepage and any non-ASCII character (curly quotes, accented
-    # names, etc.) in a title/description renders as garbled symbols
-    # instead of the original character.
-    csv_bytes = ("\ufeff" + csv_text).encode("utf-8")
+        filename = "audit_log_report.xlsx"
 
     return StreamingResponse(
-        iter([csv_bytes]),
-        media_type="text/csv; charset=utf-8",
+        iter([xlsx_bytes]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

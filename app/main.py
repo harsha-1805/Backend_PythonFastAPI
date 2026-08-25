@@ -26,7 +26,9 @@ from app.routers import (
     audit_router,
     auth_router,
     bugs_router,
+    comments_router,
     dashboard_router,
+    notifications_router,
     projects_router,
     reports_router,
     roles_router,
@@ -169,6 +171,8 @@ app.include_router(dashboard_router.router)
 app.include_router(reports_router.router)
 app.include_router(ai_assistant_router.router)
 app.include_router(test_cases_router.router)
+app.include_router(comments_router.router)
+app.include_router(notifications_router.router)
 
 
 @app.on_event("startup")

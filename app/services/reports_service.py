@@ -4,14 +4,36 @@ plus CSV export. CSV building lives here (not in the router) so the
 same row-shaping logic backs both the on-screen report and the
 downloadable file — they can never drift apart.
 """
-import csv
 import io
 from datetime import date, datetime, timedelta
 
+from openpyxl import Workbook
+from openpyxl.styles import Font
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import AuditLog, Bug, Sprint, SubTask, Task, User
+
+
+def _write_xlsx(headers: list[str], rows: list[list]) -> bytes:
+    """Shared xlsx builder — bold header row, auto-sized-ish columns via
+    a simple width heuristic, written to an in-memory buffer. Every
+    export function below just supplies its own headers/rows.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in rows:
+        ws.append(row)
+    for i, header in enumerate(headers, start=1):
+        col_letter = ws.cell(row=1, column=i).column_letter
+        longest = max([len(str(header))] + [len(str(r[i - 1])) for r in rows])
+        ws.column_dimensions[col_letter].width = min(max(longest + 2, 10), 50)
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
 
 
 def _date_range(date_from: date | None, date_to: date | None) -> tuple[datetime, datetime]:
@@ -159,7 +181,7 @@ def ai_bug_stats(db: Session, *, project_id: int | None) -> dict:
 # ---------------------------------------------------------------------------
 # CSV export
 # ---------------------------------------------------------------------------
-def export_bugs_csv(
+def export_bugs_xlsx(
     db: Session,
     *,
     project_id: int | None,
@@ -167,11 +189,13 @@ def export_bugs_csv(
     date_to: date | None,
     status: str | None,
     severity: str | None,
-) -> str:
+    sprint_id: int | None = None,
+    task_id: int | None = None,
+) -> bytes:
     start, end = _date_range(date_from, date_to)
     query = (
         db.query(Bug)
-        .options(joinedload(Bug.reporter), joinedload(Bug.assignee), joinedload(Bug.project))
+        .options(joinedload(Bug.reporter), joinedload(Bug.assignee), joinedload(Bug.project), joinedload(Bug.sprint))
         .filter(Bug.created_at >= start, Bug.created_at <= end)
     )
     if project_id is not None:
@@ -180,41 +204,49 @@ def export_bugs_csv(
         query = query.filter(Bug.status == status)
     if severity:
         query = query.filter(Bug.severity == severity)
+    if sprint_id is not None:
+        query = query.filter(Bug.sprint_id == sprint_id)
+    if task_id is not None:
+        query = query.filter(Bug.task_id == task_id)
     bugs = query.order_by(Bug.created_at.desc()).all()
 
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(
+    headers = [
+        "ID", "Title", "Project", "Sprint", "Severity", "Priority", "Status", "Module",
+        "AI Generated", "Confidence Score", "Reported By", "Assigned To",
+        "Created At", "Updated At",
+    ]
+    rows = [
         [
-            "ID", "Title", "Project", "Severity", "Priority", "Status", "Module",
-            "AI Generated", "Confidence Score", "Reported By", "Assigned To",
-            "Created At", "Updated At",
+            b.id,
+            b.title,
+            b.project.name if b.project else "",
+            b.sprint.name if b.sprint else "",
+            b.severity,
+            b.priority,
+            b.status,
+            b.module or "",
+            "Yes" if b.is_ai_generated else "No",
+            b.confidence_score if b.confidence_score is not None else "",
+            b.reporter.full_name if b.reporter else "",
+            b.assignee.full_name if b.assignee else "",
+            b.created_at.isoformat(),
+            b.updated_at.isoformat(),
         ]
-    )
-    for b in bugs:
-        writer.writerow(
-            [
-                b.id,
-                b.title,
-                b.project.name if b.project else "",
-                b.severity,
-                b.priority,
-                b.status,
-                b.module or "",
-                "Yes" if b.is_ai_generated else "No",
-                b.confidence_score if b.confidence_score is not None else "",
-                b.reporter.full_name if b.reporter else "",
-                b.assignee.full_name if b.assignee else "",
-                b.created_at.isoformat(),
-                b.updated_at.isoformat(),
-            ]
-        )
-    return buffer.getvalue()
+        for b in bugs
+    ]
+    return _write_xlsx(headers, rows)
 
 
-def export_tasks_csv(
-    db: Session, *, project_id: int | None, date_from: date | None, date_to: date | None, status: str | None
-) -> str:
+def export_tasks_xlsx(
+    db: Session,
+    *,
+    project_id: int | None,
+    date_from: date | None,
+    date_to: date | None,
+    status: str | None,
+    sprint_id: int | None = None,
+    task_id: int | None = None,
+) -> bytes:
     start, end = _date_range(date_from, date_to)
     query = (
         db.query(Task)
@@ -225,37 +257,37 @@ def export_tasks_csv(
         query = query.filter(Task.project_id == project_id)
     if status:
         query = query.filter(Task.status == status)
+    if sprint_id is not None:
+        query = query.filter(Task.sprint_id == sprint_id)
+    if task_id is not None:
+        query = query.filter(Task.id == task_id)
     tasks = query.order_by(Task.created_at.desc()).all()
 
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(
-        ["ID", "Title", "Project", "Sprint", "Status", "Due Date", "Assigned To", "Created At"]
-    )
-    for t in tasks:
-        writer.writerow(
-            [
-                t.id,
-                t.title,
-                t.project.name if t.project else "",
-                t.sprint.name if t.sprint else "",
-                t.status,
-                t.due_date.isoformat() if t.due_date else "",
-                t.assignee.full_name if t.assignee else "",
-                t.created_at.isoformat(),
-            ]
-        )
-    return buffer.getvalue()
+    headers = ["ID", "Title", "Project", "Sprint", "Status", "Due Date", "Assigned To", "Created At"]
+    rows = [
+        [
+            t.id,
+            t.title,
+            t.project.name if t.project else "",
+            t.sprint.name if t.sprint else "",
+            t.status,
+            t.due_date.isoformat() if t.due_date else "",
+            t.assignee.full_name if t.assignee else "",
+            t.created_at.isoformat(),
+        ]
+        for t in tasks
+    ]
+    return _write_xlsx(headers, rows)
 
 
-def export_audit_log_csv(
+def export_audit_log_xlsx(
     db: Session,
     *,
     project_id: int | None,
     entity_type: str | None,
     date_from: date | None,
     date_to: date | None,
-) -> str:
+) -> bytes:
     start, end = _date_range(date_from, date_to)
     query = db.query(AuditLog).filter(AuditLog.created_at >= start, AuditLog.created_at <= end)
     if project_id is not None:
@@ -264,9 +296,8 @@ def export_audit_log_csv(
         query = query.filter(AuditLog.entity_type == entity_type)
     rows = query.order_by(AuditLog.created_at.desc()).all()
 
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["When", "Who", "Module", "Action", "Description"])
-    for r in rows:
-        writer.writerow([r.created_at.isoformat(), r.actor_name or "System", r.entity_type, r.action, r.description])
-    return buffer.getvalue()
+    headers = ["When", "Who", "Module", "Action", "Description"]
+    data_rows = [
+        [r.created_at.isoformat(), r.actor_name or "System", r.entity_type, r.action, r.description] for r in rows
+    ]
+    return _write_xlsx(headers, data_rows)

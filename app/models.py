@@ -139,6 +139,20 @@ class User(Base):
         """
         return self.roles[0] if self.roles else None
 
+    @property
+    def permissions(self):
+        """Flattened, de-duplicated list of permission codes granted by
+        every role this user holds (e.g. ["bugs.edit", "bugs.delete", ...]).
+        Sent to the frontend on login/`/auth/me` so the UI can disable/hide
+        individual buttons per permission instead of hardcoding role names.
+        This mirrors `role_service.user_has_permission` — that function
+        checks one code at a time server-side (the real enforcement); this
+        property just exposes the same underlying data as a flat list for
+        the client to read without another round trip.
+        """
+        codes = {p.code for role in self.roles for p in role.permissions}
+        return sorted(codes)
+
     # --- Phase 4: User management ---------------------------------------
     # Set when an account is created via the admin "Invite user" flow
     # instead of public self-signup. Lets the UI show "Invited" vs
@@ -245,6 +259,13 @@ class Bug(Base):
     sprint_id = Column(Integer, ForeignKey("sprints.id", ondelete="SET NULL"), nullable=True)
     reported_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     assigned_to = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # --- Reopen workflow: snapshot of who was assigned right before the
+    # bug moved to "Resolved" (the developer, not the QA reporter it
+    # then gets reassigned to). Reopen uses this to hand the bug back to
+    # that same person instead of the reporter. Set in bug_service on
+    # every ->Resolved transition; nullable because a bug that's never
+    # been resolved has no "previous" assignee to speak of.
+    previous_assignee_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     title = Column(String(255), nullable=False)
     severity = Column(String(20), nullable=False, default="Medium")  # Critical/High/Medium/Low
@@ -291,6 +312,7 @@ class Bug(Base):
     subtask = relationship("SubTask", foreign_keys=[subtask_id])
     reporter = relationship("User", back_populates="reported_bugs", foreign_keys=[reported_by])
     assignee = relationship("User", back_populates="assigned_bugs", foreign_keys=[assigned_to])
+    previous_assignee = relationship("User", foreign_keys=[previous_assignee_id])
 
 
 class Task(Base):
@@ -417,6 +439,58 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     actor = relationship("User", foreign_keys=[actor_id])
+
+
+# ---------------------------------------------------------------------------
+# Comments — one row per comment on a Bug, Task, or SubTask. Polymorphic
+# via (entity_type, entity_id), same pattern as AuditLog above, so this
+# doesn't need a separate table per entity type. Deliberately simple:
+# plain text body, no rich formatting, no threading/replies for v1 — see
+# the comment_service module for why that scope was kept small.
+class Comment(Base):
+    __tablename__ = "comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    entity_type = Column(String(20), nullable=False, index=True)  # "Bug" | "Task" | "SubTask"
+    entity_id = Column(Integer, nullable=False, index=True)
+
+    author_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # Snapshot, same reasoning as AuditLog.actor_name — keeps old comments
+    # readable even if the author's account is later deleted.
+    author_name = Column(String(120), nullable=True)
+
+    body = Column(Text, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    author = relationship("User", foreign_keys=[author_id])
+
+
+# ---------------------------------------------------------------------------
+# Notifications — one row per (recipient, event). Generated server-side
+# by comment_service / bug_service / task_service when something
+# notification-worthy happens (comment posted, assigned to you, status
+# changed on something you're watching). `link_path` is a ready-to-use
+# frontend route so the bell dropdown can navigate straight to the
+# relevant bug/task on click without the frontend re-deriving a URL.
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    kind = Column(String(30), nullable=False)  # "comment" | "assigned" | "status_changed"
+    message = Column(String(255), nullable=False)
+    link_path = Column(String(255), nullable=True)  # e.g. "/bugs" — entity is scoped by list filters today
+
+    entity_type = Column(String(20), nullable=True)
+    entity_id = Column(Integer, nullable=True)
+
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    recipient = relationship("User", foreign_keys=[recipient_id])
 
 
 # ---------------------------------------------------------------------------

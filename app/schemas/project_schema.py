@@ -120,10 +120,13 @@ class SprintUpdate(BaseModel):
     end_date: Optional[date] = None
     status: Optional[str] = None
 
-    @field_validator("start_date")
-    @classmethod
-    def _start_not_past(cls, v):
-        return _reject_past_date(v)
+    # Deliberately no "start date can't be in the past" check here (unlike
+    # SprintCreate above) — once a sprint exists, its start_date is
+    # legitimately in the past the moment it's underway, and this schema
+    # gets that same unchanged value resent on every edit (e.g. just
+    # extending end_date). Only a brand-new sprint's start date needs to
+    # be today-or-later; re-validating an existing one against "today" on
+    # every save was rejecting normal edits to an already-started sprint.
 
     @model_validator(mode="after")
     def _end_after_start(self):
@@ -189,10 +192,10 @@ class TaskUpdate(BaseModel):
     sprint_id: Optional[int] = None
     assigned_to: Optional[int] = None
 
-    @field_validator("due_date")
-    @classmethod
-    def _due_not_past(cls, v):
-        return _reject_past_date(v)
+    # No "due date can't be in the past" check here (unlike TaskCreate
+    # above) — same reasoning as SprintUpdate: an overdue task resends
+    # its existing, already-past due_date on every edit (e.g. just
+    # changing status or assignee), and that shouldn't be rejected.
 
 
 class TaskAttachmentOut(BaseModel):
@@ -258,10 +261,8 @@ class SubTaskUpdate(BaseModel):
     due_date: Optional[date] = None
     assigned_to: Optional[int] = None
 
-    @field_validator("due_date")
-    @classmethod
-    def _due_not_past(cls, v):
-        return _reject_past_date(v)
+    # No "due date can't be in the past" check here — same reasoning as
+    # TaskUpdate/SprintUpdate above.
 
 
 class SubTaskOut(SubTaskBase):
@@ -312,7 +313,15 @@ class BugBase(BaseModel):
 
 class BugCreate(BugBase):
     project_id: int
-    sprint_id: Optional[int] = None
+    # Sprint is now mandatory when creating a bug too — matches
+    # TaskCreate's sprint_id below (Project -> Sprint -> Task/Bug).
+    sprint_id: int
+    # Overrides BugBase.description (Optional) — a bug report with no
+    # description isn't useful to whoever picks it up next, so this is
+    # required for every bug creation path (manual "Create Bug" form
+    # AND the AI Bug Generator's save-to-bug flow, since both funnel
+    # through this same schema — see bugs_router.py docstring).
+    description: str = Field(..., min_length=1, description="Detailed description of the issue")
     task_id: Optional[int] = Field(
         None, description="Optional task to assign this (often AI-generated) bug to"
     )
@@ -376,6 +385,9 @@ class BugOut(BaseModel):
     image_url: Optional[str] = None
     reporter: Optional[UserSummary] = None
     assignee: Optional[UserSummary] = None
+    previous_assignee: Optional[UserSummary] = Field(
+        None, description="Who was assigned before this bug was last marked Resolved — Reopen reassigns to them."
+    )
     created_at: datetime
     updated_at: datetime
 

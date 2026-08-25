@@ -93,6 +93,14 @@ PERMISSIONS: dict[str, str] = {
 
     # Audit Log
     "audit.view": "View the audit trail of who did what, and when",
+
+    # Comments (on bugs, tasks and subtasks)
+    "comments.view": "View comments on bugs/tasks/subtasks",
+    "comments.create": "Post a comment on a bug/task/subtask",
+    "comments.delete_any": "Delete any comment (moderation) — a comment's own author can always delete their own comment regardless of this permission",
+
+    # Notifications
+    "notifications.view": "View your own notifications",
 }
 
 # Default roles, in the order they should be created. "Admin" always gets
@@ -124,6 +132,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "users.view",
         "roles.view",
         "audit.view",
+        "comments.view", "comments.create", "comments.delete_any",
+        "notifications.view",
     ],
     "HR": [
         "dashboard.view",
@@ -135,6 +145,8 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "users.view", "users.invite", "users.edit", "users.deactivate",
         "users.assign_role", "users.reset_password",
         "roles.view",
+        "comments.view", "comments.create",
+        "notifications.view",
     ],
     "QA": [
         "dashboard.view",
@@ -148,17 +160,21 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
         "reports.view",
         "ai_assistant.use",
         "audit.view",
+        "comments.view", "comments.create",
+        "notifications.view",
     ],
     "Employee": [
         "dashboard.view",
         "projects.view",
         "ai_bug_generator.use",
-        "bugs.view", "bugs.create","bugs.edit",
+        "bugs.view", "bugs.create",
         "tasks.view", "tasks.edit",
         "subtasks.view", "subtasks.edit",
         "sprints.view",
         "releases.view",
         "ai_assistant.use",
+        "comments.view", "comments.create",
+        "notifications.view",
     ],
 }
 

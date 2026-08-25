@@ -197,6 +197,37 @@ def assign_bug(
     return BugOut(**bug_service.serialize(bug))
 
 
+@router.patch("/{bug_id}/reopen", response_model=BugOut)
+def reopen_bug(
+    bug_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("bugs.edit")),
+):
+    before = bug_service.get_bug(db, bug_id=bug_id)
+    if before is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bug not found")
+    project_access.assert_project_access(db, user=current_user, project_id=before.project_id)
+
+    bug = bug_service.reopen_bug(db, bug_id=bug_id)
+    audit_service.log_action(
+        db,
+        actor=current_user,
+        entity_type="Bug",
+        entity_id=bug.id,
+        entity_name=bug.title,
+        action="reopened",
+        field_changed="status",
+        old_value=before.status,
+        new_value=bug.status,
+        description=(
+            f"{current_user.full_name} reopened bug \"{bug.title}\""
+            + (f" and reassigned it to {bug.assignee.full_name}" if bug.assignee else "")
+        ),
+        project_id=bug.project_id,
+    )
+    return BugOut(**bug_service.serialize(bug))
+
+
 @router.delete("/{bug_id}", response_model=MessageResponse)
 def delete_bug(
     bug_id: int,

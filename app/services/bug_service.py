@@ -12,7 +12,7 @@ import logging
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Bug, Project, SubTask, Task
+from app.models import Bug, Project, Sprint, SubTask, Task
 from app.services import custom_id_service
 from app.services import project_access
 
@@ -61,6 +61,7 @@ def serialize(bug: Bug) -> dict:
         "image_url": bug.image_url,
         "reporter": bug.reporter,
         "assignee": bug.assignee,
+        "previous_assignee": bug.previous_assignee,
         "created_at": bug.created_at,
         "updated_at": bug.updated_at,
     }
@@ -146,6 +147,17 @@ def create_bug(db: Session, *, reported_by: int, **fields) -> Bug:
         if not fields.get("task_id"):
             fields["task_id"] = subtask.task_id
 
+    # Sprint is mandatory on create now (see BugCreate) — validate it
+    # actually belongs to this project, same rule as the subtask check
+    # above.
+    sprint_id = fields.get("sprint_id")
+    if sprint_id is not None:
+        sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
+        if sprint is None:
+            raise ValueError("That sprint does not exist")
+        if sprint.project_id != project_id:
+            raise ValueError("That sprint does not belong to this project")
+
     # A bug can only be assigned to someone on this project's team (or
     # Admin/Lead) — same rule as tasks/subtasks.
     project_access.assert_valid_assignee(
@@ -188,13 +200,15 @@ def update_bug(db: Session, *, bug_id: int, **fields) -> Bug:
     # (QA, typically) so they can verify the fix before closing it out.
     # Only kicks in on the Open/In Progress -> Resolved transition, and
     # only if the caller isn't *already* reassigning it in this same call.
-    if (
-        fields.get("status") == "Resolved"
-        and bug.status != "Resolved"
-        and fields.get("assigned_to") is None
-        and bug.reported_by is not None
-    ):
-        fields["assigned_to"] = bug.reported_by
+    if fields.get("status") == "Resolved" and bug.status != "Resolved":
+        # Snapshot whoever had it right before this transition (almost
+        # always the developer who fixed it) so a later Reopen can hand
+        # it straight back to them instead of the QA reporter this block
+        # is about to reassign it to.
+        if bug.assigned_to is not None:
+            fields.setdefault("previous_assignee_id", bug.assigned_to)
+        if fields.get("assigned_to") is None and bug.reported_by is not None:
+            fields["assigned_to"] = bug.reported_by
 
     if "assigned_to" in fields and fields["assigned_to"] is not None:
         project_access.assert_valid_assignee(
@@ -217,6 +231,38 @@ def update_bug(db: Session, *, bug_id: int, **fields) -> Bug:
         logger.exception("Failed to update bug #%s", bug_id)
         raise
     db.refresh(bug)
+    return bug
+
+
+def reopen_bug(db: Session, *, bug_id: int) -> Bug:
+    """Reopen a Resolved (or legacy Closed) bug — moves it back to "In
+    Progress" and reassigns it to whoever was actually working on it
+    before it was marked Resolved (bug.previous_assignee_id), not the
+    QA reporter it's currently sitting with. Falls back to leaving the
+    current assignee in place if there's no snapshot to fall back on
+    (e.g. it was resolved before this feature existed, or was never
+    assigned to begin with).
+    """
+    bug = db.query(Bug).filter(Bug.id == bug_id).first()
+    if bug is None:
+        raise LookupError("Bug not found")
+
+    if bug.status not in ("Resolved", "Closed"):
+        raise ValueError("Only a Resolved (or Closed) bug can be reopened")
+
+    bug.status = "In Progress"
+    if bug.previous_assignee_id is not None:
+        bug.assigned_to = bug.previous_assignee_id
+        bug.previous_assignee_id = None
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to reopen bug #%s", bug_id)
+        raise
+    db.refresh(bug)
+    logger.info("Bug #%s reopened, reassigned to user #%s", bug_id, bug.assigned_to)
     return bug
 
 
